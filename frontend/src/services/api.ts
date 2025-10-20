@@ -1,10 +1,10 @@
 import axios from 'axios'
 
 // Use environment variable for API URL
-// In development: uses /api (proxied by Vite)
-// In production: uses full backend URL
+// In development: uses /api (proxied by Vite to remove /api prefix)
+// In production: uses full backend URL directly (backend has no /api prefix)
 const baseURL = import.meta.env.VITE_API_URL 
-  ? `${import.meta.env.VITE_API_URL}/api`
+  ? import.meta.env.VITE_API_URL
   : '/api'
 
 export const api = axios.create({

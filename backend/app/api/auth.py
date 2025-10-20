@@ -44,7 +44,7 @@ async def register_user(
     db: Session = Depends(get_db)
 ):
     """Register a new user with email and password"""
-    
+    print("11111111111111111111111111111111111111111")
     # Check if user already exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
