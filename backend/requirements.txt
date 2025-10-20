@@ -1,0 +1,43 @@
+# FastAPI and web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+
+# Redis and Celery
+redis==5.0.1
+celery==5.3.4
+
+# HTTP client for OAuth
+httpx==0.25.2
+aiofiles==23.2.1
+
+# Email validation
+email-validator==2.1.0
+
+# Environment and configuration
+python-dotenv==1.0.0
+pydantic-settings==2.0.3
+
+# Authentication and security
+python-oauth2==1.1.1
+cryptography==41.0.7
+
+# WebSocket support
+websockets==12.0
+
+# Logging and monitoring
+structlog==23.2.0
+
+# Development and testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0

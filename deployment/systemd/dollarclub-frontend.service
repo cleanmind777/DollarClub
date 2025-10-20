@@ -1,0 +1,30 @@
+[Unit]
+Description=DollarClub Frontend
+After=network.target
+
+[Service]
+Type=exec
+User=dollarclub
+Group=dollarclub
+WorkingDirectory=/opt/dollarclub/frontend
+ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 3000
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+# Resource limits
+LimitNOFILE=65536
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dollarclub-frontend
+
+[Install]
+WantedBy=multi-user.target

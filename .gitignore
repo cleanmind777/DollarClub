@@ -1,0 +1,229 @@
+# DollarClub Trading Platform - .gitignore
+
+# ============================================
+# ENVIRONMENT VARIABLES
+# ============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# ============================================
+# PYTHON / BACKEND
+# ============================================
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+backend/venv/
+backend/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Alembic
+# backend/alembic/versions/*.py  # Uncomment if you want to ignore migrations
+
+# ============================================
+# NODE.JS / FRONTEND
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+
+# Frontend cache
+.cache/
+.parcel-cache/
+.vite/
+frontend/dist/
+frontend/build/
+
+# ============================================
+# DATABASE
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sql.backup
+/data/
+postgres-data/
+
+# ============================================
+# UPLOADS & USER FILES
+# ============================================
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/scripts/*
+!backend/scripts/.gitkeep
+uploads/
+temp/
+tmp/
+
+# ============================================
+# LOGS
+# ============================================
+*.log
+logs/
+*.log.*
+backend/logs/
+frontend/logs/
+
+# ============================================
+# IDE & EDITORS
+# ============================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# ============================================
+# OPERATING SYSTEM
+# ============================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================
+# DOCKER
+# ============================================
+docker-compose.override.yml
+
+# ============================================
+# SSL/TLS CERTIFICATES
+# ============================================
+*.pem
+*.key
+*.crt
+*.cert
+*.ca-bundle
+
+# ============================================
+# MISC
+# ============================================
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Compressed files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# Temporary files
+.tmp/
+temp/
+tmp/
+
+# Configuration overrides
+config.local.*
+settings.local.*
+
+# IBKR credentials (security)
+*_credentials.json
+*_token.json
+ibkr_config.json
+
+# Google OAuth credentials
+client_secret*.json
+credentials.json
+token.json
+
