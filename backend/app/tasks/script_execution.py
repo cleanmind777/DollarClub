@@ -3,7 +3,8 @@ import os
 import signal
 import time
 import logging
-from typing import Dict, Any
+import psutil
+from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from celery import current_task
@@ -14,6 +15,39 @@ from ..core.config import settings
 from ..models.script import Script, ScriptStatus
 
 logger = logging.getLogger(__name__)
+
+# Store running processes for cancellation
+running_processes: Dict[int, subprocess.Popen] = {}
+
+
+def _kill_process(process: subprocess.Popen) -> None:
+    """Kill a process and all its children"""
+    try:
+        if process.poll() is None:  # Process is still running
+            parent = psutil.Process(process.pid)
+            children = parent.children(recursive=True)
+            
+            # Kill children first
+            for child in children:
+                try:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            
+            # Kill parent
+            try:
+                parent.kill()
+            except psutil.NoSuchProcess:
+                pass
+            
+            # Wait for process to die
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Force kill if still alive
+                process.kill()
+    except Exception as e:
+        logger.error(f"Error killing process: {e}")
 
 
 @celery_app.task(bind=True, name="execute_script")
@@ -40,52 +74,75 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
         # Execute script
         logs = []
         start_time = time.time()
+        process = None
         
         try:
+            # Determine Python executable (use system python or virtual env)
+            python_executable = "python3" if os.path.exists("/usr/bin/python3") else "python"
+            
             # Run script with timeout
             process = subprocess.Popen(
-                ["python", script.file_path],
+                [python_executable, script.file_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                cwd=os.path.dirname(script.file_path)
+                cwd=os.path.dirname(script.file_path),
+                # Security: Run with limited privileges (Unix-only)
+                # preexec_fn=os.setpgrp if os.name != 'nt' else None
             )
             
-            # Stream output
+            # Store process for cancellation
+            running_processes[script_id] = process
+            
+            # Stream output with timeout
+            timeout = settings.MAX_EXECUTION_TIME
             while True:
+                # Check timeout
+                if time.time() - start_time > timeout:
+                    logger.warning(f"Script {script_id} exceeded timeout ({timeout}s)")
+                    _kill_process(process)
+                    raise TimeoutError(f"Script execution exceeded {timeout} seconds")
+                
                 output = process.stdout.readline()
                 if output == '' and process.poll() is not None:
                     break
                 if output:
                     log_line = output.strip()
                     logs.append(log_line)
+                    logger.info(f"Script {script_id}: {log_line}")
                     
-                    # Update logs in database
-                    script.execution_logs = "\n".join(logs)
-                    db.commit()
+                    # Update logs in database (every 10 lines to reduce DB load)
+                    if len(logs) % 10 == 0:
+                        script.execution_logs = "\n".join(logs)
+                        db.commit()
                     
                     # Update Celery task info
                     current_task.update_state(
                         state="PROGRESS",
                         meta={
                             "script_id": script_id,
-                            "logs": logs,
-                            "status": "running"
+                            "logs": logs[-10:],  # Last 10 lines only
+                            "status": "running",
+                            "progress": int((time.time() - start_time) / timeout * 100)
                         }
                     )
             
             # Get return code
             return_code = process.poll()
             
+            # Final log update
+            script.execution_logs = "\n".join(logs)
+            
             if return_code == 0:
                 script.status = ScriptStatus.COMPLETED
                 script.completed_at = datetime.utcnow()
+                logger.info(f"Script {script_id} completed successfully")
             else:
                 script.status = ScriptStatus.FAILED
                 script.error_message = f"Script exited with code {return_code}"
                 script.completed_at = datetime.utcnow()
+                logger.error(f"Script {script_id} failed with code {return_code}")
             
-            script.execution_logs = "\n".join(logs)
             db.commit()
             
             return {
@@ -96,22 +153,29 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
                 "execution_time": time.time() - start_time
             }
             
-        except subprocess.TimeoutExpired:
-            process.kill()
+        except TimeoutError as e:
+            if process:
+                _kill_process(process)
             script.status = ScriptStatus.FAILED
-            script.error_message = "Script execution timeout"
+            script.error_message = str(e)
+            script.execution_logs = "\n".join(logs)
             script.completed_at = datetime.utcnow()
             db.commit()
+            logger.error(f"Script {script_id} timeout: {e}")
             
             return {
                 "script_id": script_id,
                 "status": "failed",
                 "logs": logs,
-                "error": "Execution timeout"
+                "error": str(e)
             }
             
     except Exception as e:
         logger.error(f"Script execution error: {e}")
+        
+        # Kill process if still running
+        if process and process.poll() is None:
+            _kill_process(process)
         
         # Update script status
         if 'script' in locals():
@@ -128,6 +192,9 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
         }
     
     finally:
+        # Cleanup: Remove from running processes
+        if script_id in running_processes:
+            del running_processes[script_id]
         db.close()
 
 
@@ -142,15 +209,20 @@ def cancel_script(script_id: int) -> Dict[str, Any]:
             raise Exception(f"Script {script_id} not found")
         
         if script.status == ScriptStatus.RUNNING:
-            # In a real implementation, you'd need to track process IDs
-            # and kill the actual subprocess
+            # Kill the actual process if it exists
+            if script_id in running_processes:
+                process = running_processes[script_id]
+                _kill_process(process)
+                logger.info(f"Killed process for script {script_id}")
+            
             script.status = ScriptStatus.CANCELLED
             script.completed_at = datetime.utcnow()
+            script.execution_logs = (script.execution_logs or "") + "\n[Script cancelled by user]"
             db.commit()
             
             return {"script_id": script_id, "status": "cancelled"}
         else:
-            return {"script_id": script_id, "status": "not_running"}
+            return {"script_id": script_id, "status": "not_running", "current_status": script.status.value}
             
     except Exception as e:
         logger.error(f"Script cancellation error: {e}")

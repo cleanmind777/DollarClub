@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import secrets
 import logging
+import re
 from datetime import datetime, timedelta
 
 from ..core.database import get_db
@@ -181,26 +182,40 @@ async def google_callback(
     code: str,
     state: str,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """Handle Google OAuth callback"""
     try:
+        logger.info(f"Google OAuth callback received with code: {code[:20]}...")
+        
         # Exchange code for token
         token_data = await google_auth_service.exchange_code_for_token(code)
         if not token_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange code for token"
-            )
+            logger.error("Failed to exchange code for token")
+            raise Exception("Failed to exchange authorization code for token")
+
+        logger.info("Successfully exchanged code for token")
 
         # Get user info
         user_info = await google_auth_service.get_user_info(token_data["access_token"])
         if not user_info:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to get user information"
-            )
+            logger.error("Failed to get user info from Google")
+            raise Exception("Failed to retrieve user information from Google")
+        
+        logger.info(f"Retrieved user info for: {user_info.get('email')}")
 
+        # Sanitize username for database constraints
+        # Google names may contain spaces/special chars, but our DB requires alphanumeric + _-
+        google_name = user_info.get("name", user_info["email"].split("@")[0])
+        sanitized_username = re.sub(r'[^a-zA-Z0-9_-]', '_', google_name)
+        
+        # Ensure minimum length
+        if len(sanitized_username) < 3:
+            sanitized_username = user_info["email"].split("@")[0]
+        
+        logger.info(f"Sanitized username: '{google_name}' -> '{sanitized_username}'")
+        
         # Check if user exists
         user = db.query(User).filter(User.google_id == user_info["id"]).first()
         
@@ -212,39 +227,63 @@ async def google_callback(
                 existing_user.google_id = user_info["id"]
                 existing_user.auth_provider = AuthProvider.GOOGLE
                 existing_user.is_verified = True
+                existing_user.last_login_at = datetime.utcnow()
                 db.commit()
                 user = existing_user
+                logger.info(f"Linked Google account to existing user: {user.email}")
             else:
                 # Create new user
                 user = User(
                     email=user_info["email"],
-                    username=user_info.get("name", user_info["email"].split("@")[0]),
+                    username=sanitized_username,
                     google_id=user_info["id"],
                     auth_provider=AuthProvider.GOOGLE,
-                    is_verified=True
+                    is_verified=True,
+                    last_login_at=datetime.utcnow()
                 )
                 db.add(user)
                 db.commit()
                 db.refresh(user)
+                logger.info(f"Created new user from Google: {user.email}")
         else:
-            # Update existing user info
-            user.username = user_info.get("name", user.username)
+            # Update existing user info (don't change username to avoid breaking references)
             user.is_verified = True
+            user.last_login_at = datetime.utcnow()
             db.commit()
+            logger.info(f"Logged in existing Google user: {user.email}")
 
-        # Create JWT token for our application
-        jwt_token = create_access_token(data={"sub": str(user.id)})
+        # Create JWT tokens
+        access_token = create_access_token(data={"sub": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": str(user.id)})
         
-        # Redirect to frontend with token
-        frontend_url = f"http://localhost:3000/auth/callback?token={jwt_token}"
-        return RedirectResponse(url=frontend_url)
+        # Create response with redirect
+        redirect_response = RedirectResponse(url="http://localhost:3000/dashboard")
+        
+        # Set HTTP-only cookies
+        redirect_response.set_cookie(
+            key=ACCESS_COOKIE_NAME,
+            value=access_token,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="lax",
+            max_age=ACCESS_COOKIE_MAX_AGE
+        )
+        redirect_response.set_cookie(
+            key=REFRESH_COOKIE_NAME,
+            value=refresh_token,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="lax",
+            max_age=REFRESH_COOKIE_MAX_AGE
+        )
+        
+        return redirect_response
         
     except Exception as e:
-        logger.error(f"Google OAuth callback error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication failed"
-        )
+        logger.error(f"Google OAuth callback error: {e}", exc_info=True)
+        # Redirect to login with error message
+        error_url = f"http://localhost:3000/login?error=google_auth_failed&message={str(e)}"
+        return RedirectResponse(url=error_url)
 
 
 @router.post("/google/verify", response_model=TokenResponse)

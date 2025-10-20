@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from 'react-query'
-import { api } from '../services/api'
+import { api } from '@/lib/axios'
+import type { Script } from '@/types'
 import { 
   Upload, 
   Play, 
@@ -15,20 +16,7 @@ import {
 } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 
-interface Script {
-  id: number
-  filename: string
-  original_filename: string
-  file_size: number
-  status: 'uploaded' | 'running' | 'completed' | 'failed' | 'cancelled'
-  execution_logs?: string
-  error_message?: string
-  created_at: string
-  started_at?: string
-  completed_at?: string
-}
-
-export function ScriptsPage() {
+export function Scripts() {
   const [selectedScript, setSelectedScript] = useState<Script | null>(null)
   const [showLogs, setShowLogs] = useState(false)
   const queryClient = useQueryClient()
@@ -40,7 +28,9 @@ export function ScriptsPage() {
       return response.data
     },
     {
-      refetchInterval: 5000, // Refetch every 5 seconds
+      refetchInterval: 30000, // Refetch every 30 seconds (less frequent)
+      refetchOnWindowFocus: false, // Don't refetch on window focus
+      staleTime: 10000, // Consider data fresh for 10 seconds
     }
   )
 
@@ -289,7 +279,7 @@ export function ScriptsPage() {
                         <button
                           onClick={() => handleExecute(script)}
                           className="text-green-600 hover:text-green-900"
-                          disabled={executeMutation.isLoading || script.status === 'running'}
+                          disabled={executeMutation.isLoading}
                         >
                           <Play className="h-4 w-4" />
                         </button>
@@ -358,3 +348,6 @@ export function ScriptsPage() {
     </div>
   )
 }
+
+export default Scripts
+

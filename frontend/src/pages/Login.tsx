@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import { useAuth } from '../services/auth'
+import { useState, useEffect } from 'react'
+import { useAuth } from '@/services/auth'
+import { useSearchParams } from 'react-router-dom'
 import { TrendingUp, Shield, Zap, Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
 
-export function LoginPage() {
+export function Login() {
   const { login, register, googleLogin } = useAuth()
+  const [searchParams] = useSearchParams()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
@@ -12,6 +14,15 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Check for OAuth errors in URL
+  useEffect(() => {
+    const errorParam = searchParams.get('error')
+    const messageParam = searchParams.get('message')
+    if (errorParam === 'google_auth_failed') {
+      setError(`Google login failed: ${messageParam || 'Unknown error'}`)
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -235,3 +246,5 @@ export function LoginPage() {
     </div>
   )
 }
+
+export default Login

@@ -1,18 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { api } from './api'
-
-interface User {
-  id: number
-  email: string
-  username: string
-  auth_provider: 'email' | 'google'
-  google_id?: string
-  is_active: boolean
-  is_verified: boolean
-  created_at: string
-  ibkr_connected: boolean
-  ibkr_connected_at?: string
-}
+import { api } from '@/lib/axios'
+import type { User } from '@/types'
 
 interface AuthContextType {
   user: User | null
@@ -22,7 +10,6 @@ interface AuthContextType {
   register: (email: string, username: string, password: string) => Promise<void>
   googleLogin: () => void
   logout: () => void
-  handleAuthCallback: (token: string) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -34,6 +21,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = !!user
 
   useEffect(() => {
+    // Only try to fetch user if not on login page
+    // This prevents unnecessary API calls on the login page
+    const currentPath = window.location.pathname
+    if (currentPath === '/login') {
+      setIsLoading(false)
+      return
+    }
+    
     // Cookie-based auth: just try to fetch user
     // If cookie exists, backend will authenticate automatically
     fetchUser()
@@ -44,8 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.get('/auth/me')
       setUser(response.data)
     } catch (error) {
-      // Cookie is invalid or doesn't exist
-      console.error('Failed to fetch user:', error)
+      // Cookie is invalid or doesn't exist - this is expected
+      // Silently fail and let the user login (no console error)
+      setUser(null)
     } finally {
       setIsLoading(false)
     }
@@ -101,13 +97,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const handleAuthCallback = async (token: string) => {
-    // For OAuth flows, we might still receive a token
-    // Just fetch the user (cookie should be set by backend)
-    await fetchUser()
-    window.location.href = '/dashboard'
-  }
-
   return (
     <AuthContext.Provider
       value={{
@@ -118,7 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         googleLogin,
         logout,
-        handleAuthCallback,
       }}
     >
       {children}

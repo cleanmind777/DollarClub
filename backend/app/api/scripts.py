@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 
 from ..core.database import get_db
-from ..core.security import get_current_user_id
+from ..core.security import get_current_user_id, get_token_from_cookie
 from ..core.config import settings
 from ..models.user import User
 from ..models.script import Script, ScriptStatus
@@ -17,8 +17,17 @@ from ..tasks.script_execution import execute_script, cancel_script
 router = APIRouter(prefix="/scripts", tags=["scripts"])
 
 
-async def get_current_user(db: Session = Depends(get_db), token: str = Depends(get_current_user_id)):
-    """Get current authenticated user"""
+async def get_current_user(request: Request, db: Session = Depends(get_db)):
+    """Get current authenticated user from cookie"""
+    # Get token from cookie
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    
+    # Verify token and get user ID
     user_id = get_current_user_id(token)
     if not user_id:
         raise HTTPException(
@@ -26,7 +35,8 @@ async def get_current_user(db: Session = Depends(get_db), token: str = Depends(g
             detail="Invalid token"
         )
     
-    user = db.query(User).filter(User.id == user_id).first()
+    # Get user from database
+    user = db.query(User).filter(User.id == int(user_id)).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

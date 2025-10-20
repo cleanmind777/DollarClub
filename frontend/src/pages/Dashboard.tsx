@@ -1,6 +1,7 @@
 import { useQuery } from 'react-query'
-import { api } from '../services/api'
-import { useAuth } from '../services/auth'
+import { api } from '@/lib/axios'
+import { useAuth } from '@/services/auth'
+import type { ScriptStats } from '@/types'
 import { 
   TrendingUp, 
   FileText, 
@@ -11,14 +12,7 @@ import {
   BarChart3
 } from 'lucide-react'
 
-interface ScriptStats {
-  total: number
-  running: number
-  completed: number
-  failed: number
-}
-
-export function DashboardPage() {
+export function Dashboard() {
   const { user } = useAuth()
 
   const { data: scripts, isLoading } = useQuery(
@@ -28,7 +22,9 @@ export function DashboardPage() {
       return response.data
     },
     {
-      refetchInterval: 5000, // Refetch every 5 seconds
+      refetchInterval: 30000,
+      refetchOnWindowFocus: false,
+      staleTime: 10000,
     }
   )
 
@@ -234,3 +230,5 @@ export function DashboardPage() {
     </div>
   )
 }
+
+export default Dashboard
