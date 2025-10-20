@@ -34,13 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = !!user
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token')
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-      fetchUser()
-    } else {
-      setIsLoading(false)
-    }
+    // Cookie-based auth: just try to fetch user
+    // If cookie exists, backend will authenticate automatically
+    fetchUser()
   }, [])
 
   const fetchUser = async () => {
@@ -48,9 +44,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.get('/auth/me')
       setUser(response.data)
     } catch (error) {
+      // Cookie is invalid or doesn't exist
       console.error('Failed to fetch user:', error)
-      localStorage.removeItem('auth_token')
-      delete api.defaults.headers.common['Authorization']
     } finally {
       setIsLoading(false)
     }
@@ -59,9 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       const response = await api.post('/auth/login', { email, password })
-      const { access_token, user: userData } = response.data
-      localStorage.setItem('auth_token', access_token)
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
+      const { user: userData } = response.data
+      // Cookie is set automatically by the backend
       setUser(userData)
     } catch (error) {
       console.error('Login failed:', error)
@@ -77,9 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password, 
         confirm_password: password 
       })
-      const { access_token, user: userData } = response.data
-      localStorage.setItem('auth_token', access_token)
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
+      const { user: userData } = response.data
+      // Cookie is set automatically by the backend
       setUser(userData)
     } catch (error) {
       console.error('Registration failed:', error)
@@ -96,16 +89,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem('auth_token')
-    delete api.defaults.headers.common['Authorization']
-    setUser(null)
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout')
+      // Cookie is cleared by the backend
+      setUser(null)
+    } catch (error) {
+      console.error('Logout failed:', error)
+      // Clear user anyway
+      setUser(null)
+    }
   }
 
-  const handleAuthCallback = (token: string) => {
-    localStorage.setItem('auth_token', token)
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-    fetchUser()
+  const handleAuthCallback = async (token: string) => {
+    // For OAuth flows, we might still receive a token
+    // Just fetch the user (cookie should be set by backend)
+    await fetchUser()
     window.location.href = '/dashboard'
   }
 
