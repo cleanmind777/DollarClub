@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from datetime import datetime
 from typing import Optional, List
 from ..models.script import ScriptStatus
@@ -25,6 +25,11 @@ class ScriptResponse(ScriptBase):
     completed_at: Optional[datetime]
     created_at: datetime
     updated_at: Optional[datetime]
+
+    @field_serializer('status')
+    def serialize_status(self, status: ScriptStatus, _info):
+        """Convert status enum to lowercase string for frontend"""
+        return status.value.lower()
 
     class Config:
         from_attributes = True

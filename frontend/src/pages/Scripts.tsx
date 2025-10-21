@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from 'react-query'
 import { api } from '@/lib/axios'
 import type { Script } from '@/types'
@@ -12,14 +12,45 @@ import {
   CheckCircle,
   XCircle,
   Download,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 
 export function Scripts() {
   const [selectedScript, setSelectedScript] = useState<Script | null>(null)
   const [showLogs, setShowLogs] = useState(false)
+  const [isRefreshingLogs, setIsRefreshingLogs] = useState(false)
   const queryClient = useQueryClient()
+
+  // Auto-refresh logs for running scripts
+  useEffect(() => {
+    if (!showLogs || !selectedScript || selectedScript.status !== 'running') {
+      return
+    }
+
+    const refreshLogs = async () => {
+      try {
+        setIsRefreshingLogs(true)
+        const response = await api.get(`/scripts/${selectedScript.id}/status`)
+        setSelectedScript(prev => prev ? {
+          ...prev,
+          execution_logs: response.data.logs,
+          error_message: response.data.error_message,
+          status: response.data.status
+        } : null)
+      } catch (error) {
+        console.error('Failed to refresh logs:', error)
+      } finally {
+        setIsRefreshingLogs(false)
+      }
+    }
+
+    // Refresh logs every 1 second for real-time trading algorithm monitoring
+    const interval = setInterval(refreshLogs, 1000)
+    
+    return () => clearInterval(interval)
+  }, [showLogs, selectedScript?.id, selectedScript?.status])
 
   const { data: scriptsData, isLoading } = useQuery(
     'scripts',
@@ -52,12 +83,21 @@ export function Scripts() {
 
   const executeMutation = useMutation(
     async (scriptId: number) => {
+      console.log('Executing script:', scriptId)
       const response = await api.post(`/scripts/${scriptId}/execute`)
+      console.log('Execute response:', response.data)
       return response.data
     },
     {
-      onSuccess: () => {
+      onSuccess: (data) => {
+        console.log('Execute success:', data)
         queryClient.invalidateQueries('scripts')
+        // Reload page to show updated status
+        window.location.reload()
+      },
+      onError: (error: any) => {
+        console.error('Execute failed:', error)
+        alert(`Failed to execute script: ${error.response?.data?.detail || error.message}`)
       }
     }
   )
@@ -70,6 +110,8 @@ export function Scripts() {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('scripts')
+        // Reload page to show updated status
+        setTimeout(() => window.location.reload(), 500)
       }
     }
   )
@@ -153,8 +195,18 @@ export function Scripts() {
     }
   }
 
-  const handleViewLogs = (script: Script) => {
-    setSelectedScript(script)
+  const handleViewLogs = async (script: Script) => {
+    // Fetch latest logs (especially important for running scripts)
+    try {
+      const response = await api.get(`/scripts/${script.id}/status`)
+      setSelectedScript({
+        ...script,
+        execution_logs: response.data.logs,
+        error_message: response.data.error_message
+      })
+    } catch (error) {
+      setSelectedScript(script)
+    }
     setShowLogs(true)
   }
 
@@ -266,39 +318,47 @@ export function Scripts() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(script.created_at).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                      {script.status === 'running' ? (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center gap-2">
+                        {script.status === 'running' ? (
+                          <button
+                            onClick={() => handleCancel(script)}
+                            className="inline-flex items-center px-3 py-1.5 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500"
+                            disabled={cancelMutation.isLoading}
+                            title="Stop script execution"
+                          >
+                            <Square className="h-4 w-4 mr-1" />
+                            Stop
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleExecute(script)}
+                            className="inline-flex items-center px-3 py-1.5 border border-green-300 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500"
+                            disabled={executeMutation.isLoading}
+                            title="Execute script"
+                          >
+                            <Play className="h-4 w-4 mr-1" />
+                            Run
+                          </button>
+                        )}
+                        
                         <button
-                          onClick={() => handleCancel(script)}
-                          className="text-red-600 hover:text-red-900"
-                          disabled={cancelMutation.isLoading}
+                          onClick={() => handleViewLogs(script)}
+                          className="inline-flex items-center px-2 py-1.5 text-blue-600 hover:text-blue-900"
+                          title="View execution logs"
                         >
-                          <Square className="h-4 w-4" />
+                          <Download className="h-4 w-4" />
                         </button>
-                      ) : (
+                        
                         <button
-                          onClick={() => handleExecute(script)}
-                          className="text-green-600 hover:text-green-900"
-                          disabled={executeMutation.isLoading}
+                          onClick={() => handleDelete(script)}
+                          className="inline-flex items-center px-2 py-1.5 text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={script.status === 'running'}
+                          title={script.status === 'running' ? 'Cannot delete running script' : 'Delete script'}
                         >
-                          <Play className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4" />
                         </button>
-                      )}
-                      
-                      <button
-                        onClick={() => handleViewLogs(script)}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
-                      
-                      <button
-                        onClick={() => handleDelete(script)}
-                        className="text-red-600 hover:text-red-900"
-                        disabled={script.status === 'running'}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -317,21 +377,50 @@ export function Scripts() {
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Execution Logs - {selectedScript.original_filename}
-                  </h3>
-                  <button
-                    onClick={() => setShowLogs(false)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="h-6 w-6" />
-                  </button>
+                  <div className="flex items-center">
+                    <h3 className="text-lg font-medium text-gray-900">
+                      Execution Logs - {selectedScript.original_filename}
+                    </h3>
+                    {selectedScript.status === 'running' && (
+                      <span className="ml-3 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        <RefreshCw className={`h-3 w-3 mr-1 ${isRefreshingLogs ? 'animate-spin' : ''}`} />
+                        Live
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {selectedScript.status === 'running' && (
+                      <button
+                        onClick={() => {
+                          handleCancel(selectedScript)
+                          setShowLogs(false)
+                        }}
+                        className="btn btn-danger text-sm flex items-center"
+                        disabled={cancelMutation.isLoading}
+                      >
+                        <Square className="h-4 w-4 mr-1" />
+                        Stop Script
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowLogs(false)}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="h-6 w-6" />
+                    </button>
+                  </div>
                 </div>
                 
-                <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm max-h-96 overflow-y-auto">
+                <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm max-h-96 overflow-y-auto" id="logs-container">
                   <pre className="whitespace-pre-wrap">
-                    {selectedScript.execution_logs || 'No logs available'}
+                    {selectedScript.execution_logs || 'Waiting for output...'}
                   </pre>
+                  {selectedScript.status === 'running' && (
+                    <div className="flex items-center mt-2 text-blue-400">
+                      <Clock className="h-4 w-4 mr-2 animate-pulse" />
+                      <span className="text-xs">Script is running... Logs update in real-time (every 1s)</span>
+                    </div>
+                  )}
                 </div>
                 
                 {selectedScript.error_message && (

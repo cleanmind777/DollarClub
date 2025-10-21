@@ -4,6 +4,7 @@ from typing import List, Optional
 import os
 import aiofiles
 import uuid
+import logging
 from datetime import datetime
 
 from ..core.database import get_db
@@ -12,9 +13,10 @@ from ..core.config import settings
 from ..models.user import User
 from ..models.script import Script, ScriptStatus
 from ..schemas.script import ScriptResponse, ScriptList, ScriptExecution
-from ..tasks.script_execution import execute_script, cancel_script
+from ..tasks.script_execution import execute_script
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
+logger = logging.getLogger(__name__)
 
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)):
@@ -70,7 +72,9 @@ async def upload_script(
     # Generate unique filename
     file_extension = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(settings.SCRIPTS_DIR, unique_filename)
+    
+    # Use absolute path to avoid confusion
+    file_path = os.path.abspath(os.path.join(settings.SCRIPTS_DIR, unique_filename))
     
     # Save file
     try:
@@ -88,7 +92,7 @@ async def upload_script(
         user_id=current_user.id,
         filename=unique_filename,
         original_filename=file.filename,
-        file_path=file_path,
+        file_path=file_path,  # Now stores absolute path
         file_size=file.size,
         status=ScriptStatus.UPLOADED
     )
@@ -175,13 +179,22 @@ async def execute_script_endpoint(
             detail=f"Maximum concurrent scripts limit ({settings.MAX_CONCURRENT_SCRIPTS}) reached"
         )
     
-    # Start Celery task
+    # Start Celery task and store task_id IMMEDIATELY
     task = execute_script.delay(script_id)
+    
+    # Store task_id in script for tracking and revocation
+    # Note: Don't set status=RUNNING here because of DB constraint ck_running_has_start_time
+    # The Celery task will set both status and started_at together
+    script.celery_task_id = task.id
+    db.commit()
+    
+    logger.info(f"Script {script_id} started with Celery task ID: {task.id}")
     
     return {
         "message": "Script execution started",
         "task_id": task.id,
-        "script_id": script_id
+        "script_id": script_id,
+        "celery_task_id": task.id  # Return to frontend
     }
 
 
@@ -206,7 +219,7 @@ async def get_script_status(
     
     return {
         "script_id": script_id,
-        "status": script.status.value,
+        "status": script.status.value.lower(),  # Convert to lowercase for frontend
         "logs": script.execution_logs or "",
         "error_message": script.error_message,
         "started_at": script.started_at,
@@ -239,10 +252,31 @@ async def cancel_script_endpoint(
             detail="Script is not running"
         )
     
-    # Cancel Celery task
-    cancel_script.delay(script_id)
-    
-    return {"message": "Script cancellation requested"}
+    # Cancel the script by updating database status
+    # The Celery task will detect this and exit cleanly
+    try:
+        logger.info(f"Script {script_id}: Cancellation requested")
+        
+        # Update database status to CANCELLED
+        # Celery task checks database and will exit when it sees this
+        script.status = ScriptStatus.CANCELLED
+        script.completed_at = datetime.utcnow()
+        db.commit()
+        
+        logger.info(f"Script {script_id}: Marked as CANCELLED in database - task will detect and exit")
+        
+        return {
+            "message": "Script cancellation requested - task will stop on next check", 
+            "script_id": script_id,
+            "status": "cancelled"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to cancel script {script_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel script: {str(e)}"
+        )
 
 
 @router.delete("/{script_id}")
