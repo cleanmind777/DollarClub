@@ -1,0 +1,51 @@
+# Common packages for user trading scripts
+# Install with: pip install -r requirements_scripts.txt
+
+# Data manipulation and analysis
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Financial data and trading
+yfinance>=0.2.0
+alpaca-trade-api>=3.0.0
+python-binance>=1.0.0
+ccxt>=4.0.0
+
+# Technical analysis
+ta-lib>=0.4.0  # Note: Requires TA-Lib C library
+pandas-ta>=0.3.0
+stockstats>=0.6.0
+
+# Machine learning (optional but common)
+scikit-learn>=1.3.0
+tensorflow>=2.13.0; python_version >= '3.9'
+torch>=2.0.0; python_version >= '3.9'
+
+# Plotting and visualization
+matplotlib>=3.7.0
+plotly>=5.14.0
+seaborn>=0.12.0
+
+# HTTP requests and APIs
+requests>=2.31.0
+aiohttp>=3.8.0
+websocket-client>=1.5.0
+
+# Time and date handling
+python-dateutil>=2.8.0
+pytz>=2023.3
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.65.0
+
+# Database (for script data storage)
+sqlalchemy>=2.0.0
+pymongo>=4.3.0
+
+# Misc useful packages
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+openpyxl>=3.1.0
+

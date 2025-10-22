@@ -16,6 +16,7 @@ from .celery_app import celery_app
 from ..core.database import SessionLocal
 from ..core.config import settings
 from ..models.script import Script, ScriptStatus
+from ..services.package_validator import validator as package_validator
 
 logger = logging.getLogger(__name__)
 
@@ -127,23 +128,65 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
         if not os.path.exists(script.file_path):
             raise Exception(f"Script file not found: {script.file_path}")
         
+        # Validate packages before execution
+        logger.info(f"Script {script_id}: Validating package dependencies...")
+        all_installed, missing_pkgs, available_pkgs = package_validator.validate_packages(script.file_path)
+        
+        if not all_installed:
+            error_msg = package_validator.create_error_message(missing_pkgs)
+            logger.error(f"Script {script_id}: Missing packages: {missing_pkgs}")
+            
+            # Save error to database
+            script.status = ScriptStatus.FAILED
+            script.error_message = error_msg
+            script.execution_logs = f"Package validation failed.\n\n{error_msg}"
+            script.completed_at = datetime.utcnow()
+            script.celery_task_id = None
+            db.commit()
+            
+            return {
+                "script_id": script_id,
+                "status": "failed",
+                "error": error_msg,
+                "missing_packages": missing_pkgs
+            }
+        
+        logger.info(f"Script {script_id}: All packages available: {available_pkgs}")
+        
         # Execute script
         logs = []
         start_time = time.time()
         process = None
         
         try:
-            # Determine Python executable (use system python or virtual env)
-            python_executable = "python3" if os.path.exists("/usr/bin/python3") else "python"
+            # Determine Python executable (use current Python interpreter)
+            python_executable = sys.executable
             
-            # Run script with timeout and proper buffering
+            # Set environment to force unbuffered output
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'  # Force unbuffered output
+            env['PYTHONIOENCODING'] = 'utf-8'  # Ensure UTF-8 encoding
+            
+            # Decide whether to use wrapper or run directly
+            if settings.USE_SCRIPT_WRAPPER:
+                # Use wrapper script for better output handling (recommended)
+                wrapper_path = os.path.join(os.path.dirname(__file__), 'script_wrapper.py')
+                cmd = [python_executable, "-u", wrapper_path, script.file_path]
+                logger.info(f"Script {script_id}: Using wrapper for execution")
+            else:
+                # Run script directly (for debugging)
+                cmd = [python_executable, "-u", script.file_path]
+                logger.info(f"Script {script_id}: Running directly without wrapper")
+            
+            # Run script with forced unbuffering
             process = subprocess.Popen(
-                [python_executable, "-u", script.file_path],  # -u for unbuffered output
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                bufsize=1,  # Line buffered
+                bufsize=0,  # Completely unbuffered
                 cwd=os.path.dirname(script.file_path),
+                env=env,  # Pass environment with PYTHONUNBUFFERED
                 # Security: Run with limited privileges (Unix-only)
                 # preexec_fn=os.setpgrp if os.name != 'nt' else None
             )
@@ -153,8 +196,13 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
             
             # Stream output with timeout
             timeout = settings.MAX_EXECUTION_TIME
+            last_db_update = time.time()
+            heartbeat_interval = 2.0  # Update DB every 2 seconds even without output
             
+            iteration = 0
             while True:
+                iteration += 1
+                
                 # Check if script was cancelled externally by checking DATABASE
                 # (Don't use in-memory set - FastAPI and Celery are separate processes!)
                 db.refresh(script)  # Reload from database to get latest status
@@ -194,43 +242,28 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
                     raise TimeoutError(f"Script execution exceeded {timeout} seconds")
                 
                 try:
-                    # Use non-blocking read with short timeout
-                    if sys.platform == 'win32':
-                        # Windows: Use a timeout approach
-                        output = None
+                    # Just try to read a line - simple and reliable
+                    output = process.stdout.readline()
+                    
+                    # If we got output, great - process it below
+                    # If readline() returns empty, check why
+                    if not output or output == '':
+                        # No output - check if process finished
+                        if process.poll() is not None:
+                            # Process finished AND no more output from readline
+                            # This means we've read everything line-by-line
+                            logger.info(f"Script {script_id}: Process finished, readline empty")
+                            break
                         
-                        def read_output():
-                            nonlocal output
-                            try:
-                                output = process.stdout.readline()
-                            except:
-                                pass
+                        # Process still running, just no output yet
+                        # Check for cancellation
+                        if script_id in cancelled_scripts:
+                            logger.warning(f"Script {script_id}: Cancelled")
+                            break
                         
-                        thread = threading.Thread(target=read_output)
-                        thread.daemon = True
-                        thread.start()
-                        thread.join(timeout=0.1)  # 100ms timeout
-                        
-                        if thread.is_alive():
-                            # Thread still reading - check cancellation and process death
-                            # This is critical for infinite loops!
-                            if script_id in cancelled_scripts or process.poll() is not None:
-                                logger.warning(f"Script {script_id}: Cancelled or process dead while reading")
-                                break
-                            # No output available yet, continue to check cancellation
-                            continue
-                            
-                    else:
-                        # Unix/Linux: Use select for non-blocking read
-                        ready, _, _ = select.select([process.stdout], [], [], 0.1)
-                        if not ready:
-                            # No data available - check cancellation before continuing
-                            if script_id in cancelled_scripts or process.poll() is not None:
-                                logger.warning(f"Script {script_id}: Cancelled or process dead (Unix)")
-                                break
-                            # No data available, continue to check cancellation
-                            continue
-                        output = process.stdout.readline()
+                        # Small sleep to avoid busy loop
+                        time.sleep(0.01)
+                        continue
                         
                 except (IOError, OSError) as e:
                     # Process was killed externally
@@ -265,8 +298,29 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
                     # Save EVERY line to database immediately for accurate logging
                     # This ensures no logs are lost and user sees real-time updates
                     script.execution_logs = "\n".join(logs)
+                    last_db_update = time.time()
                     db.commit()
                     logger.debug(f"Script {script_id}: Saved {len(logs)} lines to database")
+                
+                # Heartbeat: Update database periodically even without output
+                # This is critical for infinite loops that don't produce output
+                current_time = time.time()
+                if current_time - last_db_update >= heartbeat_interval:
+                    # Add status info to logs if no output recently
+                    elapsed = int(current_time - start_time)
+                    if not logs or current_time - start_time > 3:  # Add status after 3 seconds
+                        status_msg = f"[Status: Script running... {elapsed}s elapsed, {len(logs)} lines captured]"
+                        # Don't add duplicate status messages
+                        if not logs or not logs[-1].startswith("[Status:"):
+                            logs.append(status_msg)
+                            script.execution_logs = "\n".join(logs)
+                    else:
+                        # Just update timestamp without adding to logs
+                        script.execution_logs = "\n".join(logs) if logs else "[Script started, waiting for output...]"
+                    
+                    last_db_update = current_time
+                    db.commit()
+                    logger.debug(f"Script {script_id}: Heartbeat update ({elapsed}s elapsed, {len(logs)} lines)")
                 
                 # Update Celery task info
                 if output:
@@ -281,11 +335,9 @@ def execute_script(self, script_id: int) -> Dict[str, Any]:
                         }
                     )
                 
-                # Check if process finished AFTER trying to read
-                # This ensures we capture all buffered output before exiting
-                elif output == '' and process.poll() is not None:
-                    logger.info(f"Script {script_id}: Process finished, no more output")
-                    break
+                # If no output, just continue
+                if not output or output == '':
+                    continue
             
             # Get return code
             return_code = process.poll()

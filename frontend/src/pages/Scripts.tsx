@@ -48,6 +48,14 @@ export function Scripts() {
           error_message: response.data.error_message,
           status: response.data.status
         } : null)
+        
+        // Auto-scroll to bottom of logs
+        setTimeout(() => {
+          const logsContainer = document.getElementById('logs-container')
+          if (logsContainer) {
+            logsContainer.scrollTop = logsContainer.scrollHeight
+          }
+        }, 50)
       } catch (error) {
         console.error('Failed to refresh logs:', error)
       } finally {
@@ -307,6 +315,19 @@ export function Scripts() {
             Supports Python (.py), JavaScript (.js), and TypeScript (.ts) files up to 10MB
           </p>
         </div>
+        
+        {/* Package Information */}
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="text-sm font-medium text-blue-900 mb-2">📦 Package Requirements</h4>
+          <p className="text-xs text-blue-800 mb-2">
+            Scripts are automatically validated for package dependencies before execution.
+          </p>
+          <div className="text-xs text-blue-700 space-y-1">
+            <div>✓ <strong>Pre-installed:</strong> pandas, numpy, requests, and more</div>
+            <div>✓ <strong>Auto-detected:</strong> Missing packages are identified automatically</div>
+            <div>✓ <strong>Clear errors:</strong> See exact installation commands if packages are missing</div>
+          </div>
+        </div>
       </div>
 
       {/* Scripts List */}
@@ -483,21 +504,36 @@ export function Scripts() {
                 </div>
                 
                 <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm max-h-96 overflow-y-auto" id="logs-container">
-                  <pre className="whitespace-pre-wrap">
-                    {selectedScript.execution_logs || 'Waiting for output...'}
-                  </pre>
                   {selectedScript.status === 'running' && (
-                    <div className="flex items-center mt-2 text-blue-400">
+                    <div className="flex items-center mb-3 text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded px-3 py-2">
                       <Clock className="h-4 w-4 mr-2 animate-pulse" />
-                      <span className="text-xs">Script is running... Logs update in real-time (every 1s)</span>
+                      <span className="text-xs font-semibold">RUNNING - Logs auto-refresh every 1 second</span>
+                      {isRefreshingLogs && (
+                        <RefreshCw className="h-3 w-3 ml-2 animate-spin" />
+                      )}
                     </div>
                   )}
+                  <pre className="whitespace-pre-wrap">
+                    {selectedScript.execution_logs || (selectedScript.status === 'running' ? 'Script started, waiting for output...' : 'No logs available')}
+                  </pre>
                 </div>
                 
                 {selectedScript.error_message && (
                   <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
-                    <h4 className="text-sm font-medium text-red-800">Error Message:</h4>
-                    <p className="text-sm text-red-700 mt-1">{selectedScript.error_message}</p>
+                    <h4 className="text-sm font-medium text-red-800 flex items-center">
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Error Message:
+                    </h4>
+                    <pre className="text-sm text-red-700 mt-2 whitespace-pre-wrap font-mono bg-red-100 p-3 rounded">
+                      {selectedScript.error_message}
+                    </pre>
+                    {selectedScript.error_message.includes('pip install') && (
+                      <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded">
+                        <p className="text-xs text-blue-800">
+                          💡 <strong>Tip:</strong> Copy the installation command above and share it with your administrator.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

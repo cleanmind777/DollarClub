@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     MAX_EXECUTION_TIME: int = 3600  # 1 hour
     MAX_CONCURRENT_SCRIPTS: int = 5
     
+    # Package management
+    AUTO_INSTALL_PACKAGES: bool = False  # Enable automatic package installation (use with caution)
+    
+    # Script execution options
+    USE_SCRIPT_WRAPPER: bool = True  # Use wrapper for auto-flushing (recommended)
+    
     # File storage
     SCRIPTS_DIR: str = "scripts"
     UPLOAD_DIR: str = "uploads"
