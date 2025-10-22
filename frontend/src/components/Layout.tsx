@@ -7,7 +7,8 @@ import {
   Menu,
   X,
   User,
-  Settings
+  Settings,
+  Activity
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -20,6 +21,7 @@ export function Layout() {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
     { name: 'Scripts', href: '/scripts', icon: FileText },
+    { name: 'Monitor', href: '/monitor', icon: Activity },
     { name: 'Settings', href: '/settings', icon: Settings },
   ]
 

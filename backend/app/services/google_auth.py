@@ -1,5 +1,6 @@
 import httpx
 from typing import Optional, Dict, Any
+from urllib.parse import urlencode
 from ..core.config import settings
 import logging
 
@@ -27,8 +28,8 @@ class GoogleAuthService:
             "prompt": "consent"
         }
         
-        # Build query string
-        query_params = "&".join([f"{k}={v}" for k, v in params.items()])
+        # Build query string with proper URL encoding
+        query_params = urlencode(params)
         return f"{self.auth_url}?{query_params}"
 
     async def exchange_code_for_token(self, code: str) -> Optional[Dict[str, Any]]:
@@ -45,9 +46,16 @@ class GoogleAuthService:
             async with httpx.AsyncClient() as client:
                 response = await client.post(self.token_url, data=data)
                 response.raise_for_status()
-                return response.json()
+                token_response = response.json()
+                logger.info("Successfully exchanged code for token")
+                return token_response
         except httpx.HTTPError as e:
             logger.error(f"Google token exchange failed: {e}")
+            logger.error(f"Response status: {e.response.status_code if hasattr(e, 'response') else 'N/A'}")
+            logger.error(f"Response body: {e.response.text if hasattr(e, 'response') else 'N/A'}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error during token exchange: {e}", exc_info=True)
             return None
 
     async def get_user_info(self, access_token: str) -> Optional[Dict[str, Any]]:
@@ -58,9 +66,16 @@ class GoogleAuthService:
             async with httpx.AsyncClient() as client:
                 response = await client.get(self.user_info_url, headers=headers)
                 response.raise_for_status()
-                return response.json()
+                user_info = response.json()
+                logger.info(f"Successfully retrieved user info for: {user_info.get('email')}")
+                return user_info
         except httpx.HTTPError as e:
             logger.error(f"Failed to get Google user info: {e}")
+            logger.error(f"Response status: {e.response.status_code if hasattr(e, 'response') else 'N/A'}")
+            logger.error(f"Response body: {e.response.text if hasattr(e, 'response') else 'N/A'}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error getting user info: {e}", exc_info=True)
             return None
 
     async def verify_id_token(self, id_token: str) -> Optional[Dict[str, Any]]:

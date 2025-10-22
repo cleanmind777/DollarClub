@@ -33,6 +33,9 @@ class Script(Base):
     file_size = Column(Integer, nullable=False)
     file_extension = Column(String(10), nullable=True)
     
+    # Celery task tracking
+    celery_task_id = Column(String(255), nullable=True, index=True)
+    
     # Execution information
     status = Column(Enum(ScriptStatus), default=ScriptStatus.UPLOADED, nullable=False)
     execution_logs = Column(Text, nullable=True)

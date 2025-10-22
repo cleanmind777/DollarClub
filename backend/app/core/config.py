@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8001/auth/google/callback"
     
     # IBKR OAuth (secondary integration)
     IBKR_CLIENT_ID: str = ""
@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     MAX_SCRIPT_SIZE: int = 10 * 1024 * 1024  # 10MB
     MAX_EXECUTION_TIME: int = 3600  # 1 hour
     MAX_CONCURRENT_SCRIPTS: int = 5
+    
+    # Package management
+    AUTO_INSTALL_PACKAGES: bool = False  # Enable automatic package installation (use with caution)
+    
+    # Script execution options
+    USE_SCRIPT_WRAPPER: bool = True  # Use wrapper for auto-flushing (recommended)
     
     # File storage
     SCRIPTS_DIR: str = "scripts"

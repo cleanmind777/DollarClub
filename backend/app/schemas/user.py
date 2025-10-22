@@ -34,12 +34,12 @@ class UserLogin(BaseModel):
 class UserResponse(UserBase):
     id: int
     auth_provider: AuthProvider
-    google_id: Optional[str]
+    google_id: Optional[str] = None
     is_active: bool
     is_verified: bool
     created_at: datetime
-    ibkr_connected: bool
-    ibkr_connected_at: Optional[datetime]
+    is_ibkr_connected: bool
+    ibkr_connected_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

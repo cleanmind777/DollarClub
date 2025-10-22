@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useAuth } from '../services/auth'
-import { IBKRIntegration } from './IBKRIntegration'
+import { useAuth } from '@/services/auth'
+import { IBKRIntegration } from '@/components/IBKRIntegration'
 import { 
   User, 
   Mail, 
@@ -10,7 +10,7 @@ import {
   XCircle
 } from 'lucide-react'
 
-export function SettingsPage() {
+export function Settings() {
   const { user } = useAuth()
 
   const getAuthProviderIcon = (provider: string) => {
@@ -189,3 +189,5 @@ export function SettingsPage() {
     </div>
   )
 }
+
+export default Settings

@@ -8,14 +8,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Create engine with enhanced configuration
+# Configure connect_args based on database type
+connect_args = {}
+if "postgresql" in settings.DATABASE_URL:
+    connect_args = {"options": "-c timezone=utc"}
+elif "sqlite" in settings.DATABASE_URL:
+    connect_args = {"check_same_thread": False}
+
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,  # Verify connections before use
     pool_recycle=300,    # Recycle connections every 5 minutes
     echo=settings.DEBUG, # Log SQL queries in debug mode
-    connect_args={
-        "options": "-c timezone=utc"  # Set timezone to UTC
-    }
+    connect_args=connect_args
 )
 
 # Session configuration

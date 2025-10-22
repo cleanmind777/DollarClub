@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useAuth } from '../services/auth'
-import { api } from '../services/api'
+import { useAuth } from '@/services/auth'
+import { api } from '@/lib/axios'
 import { 
   TrendingUp, 
   CheckCircle, 
