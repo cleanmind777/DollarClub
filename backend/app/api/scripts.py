@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
@@ -277,6 +278,80 @@ async def cancel_script_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel script: {str(e)}"
         )
+
+
+@router.get("/{script_id}/content")
+async def get_script_content(
+    script_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get script file content for viewing"""
+    
+    script = db.query(Script).filter(
+        Script.id == script_id,
+        Script.user_id == current_user.id
+    ).first()
+    
+    if not script:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Script not found"
+        )
+    
+    if not os.path.exists(script.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Script file not found on disk"
+        )
+    
+    try:
+        async with aiofiles.open(script.file_path, 'r', encoding='utf-8') as f:
+            content = await f.read()
+        
+        return {
+            "script_id": script_id,
+            "filename": script.original_filename,
+            "content": content
+        }
+    except Exception as e:
+        logger.error(f"Failed to read script {script_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read script content: {str(e)}"
+        )
+
+
+@router.get("/{script_id}/download")
+async def download_script(
+    script_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Download script file"""
+    
+    script = db.query(Script).filter(
+        Script.id == script_id,
+        Script.user_id == current_user.id
+    ).first()
+    
+    if not script:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Script not found"
+        )
+    
+    if not os.path.exists(script.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Script file not found on disk"
+        )
+    
+    return FileResponse(
+        path=script.file_path,
+        media_type='application/octet-stream',
+        filename=script.original_filename
+    )
 
 
 @router.delete("/{script_id}")

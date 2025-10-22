@@ -13,14 +13,23 @@ import {
   XCircle,
   Download,
   X,
-  RefreshCw
+  RefreshCw,
+  Eye
 } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
+import { LoadingModal } from '@/components/LoadingModal'
+import { ScriptViewModal } from '@/components/ScriptViewModal'
 
 export function Scripts() {
   const [selectedScript, setSelectedScript] = useState<Script | null>(null)
   const [showLogs, setShowLogs] = useState(false)
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false)
+  const [showScriptView, setShowScriptView] = useState(false)
+  const [scriptContent, setScriptContent] = useState('')
+  const [viewedScriptName, setViewedScriptName] = useState('')
+  const [viewedScriptId, setViewedScriptId] = useState<number>(0)
+  const [isActionLoading, setIsActionLoading] = useState(false)
+  const [loadingMessage, setLoadingMessage] = useState('')
   const queryClient = useQueryClient()
 
   // Auto-refresh logs for running scripts
@@ -210,6 +219,52 @@ export function Scripts() {
     setShowLogs(true)
   }
 
+  const handleViewScript = async (script: Script) => {
+    try {
+      setIsActionLoading(true)
+      setLoadingMessage('Loading script content...')
+      const response = await api.get(`/scripts/${script.id}/content`)
+      setScriptContent(response.data.content)
+      setViewedScriptName(response.data.filename)
+      setViewedScriptId(script.id)
+      setShowScriptView(true)
+    } catch (error: any) {
+      alert(`Failed to load script: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  const handleDownloadScript = async (scriptId: number) => {
+    try {
+      setIsActionLoading(true)
+      setLoadingMessage('Preparing download...')
+      
+      // Find the script to get its name
+      const script = scripts.find((s: Script) => s.id === scriptId)
+      if (!script) return
+      
+      const response = await api.get(`/scripts/${scriptId}/download`, {
+        responseType: 'blob'
+      })
+      
+      // Create a blob URL and trigger download
+      const blob = new Blob([response.data])
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = script.original_filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (error: any) {
+      alert(`Failed to download script: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -343,11 +398,27 @@ export function Scripts() {
                         )}
                         
                         <button
-                          onClick={() => handleViewLogs(script)}
+                          onClick={() => handleViewScript(script)}
                           className="inline-flex items-center px-2 py-1.5 text-blue-600 hover:text-blue-900"
-                          title="View execution logs"
+                          title="View script code"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        
+                        <button
+                          onClick={() => handleDownloadScript(script.id)}
+                          className="inline-flex items-center px-2 py-1.5 text-purple-600 hover:text-purple-900"
+                          title="Download script"
                         >
                           <Download className="h-4 w-4" />
+                        </button>
+                        
+                        <button
+                          onClick={() => handleViewLogs(script)}
+                          className="inline-flex items-center px-2 py-1.5 text-gray-600 hover:text-gray-900"
+                          title="View execution logs"
+                        >
+                          <FileText className="h-4 w-4" />
                         </button>
                         
                         <button
@@ -434,6 +505,19 @@ export function Scripts() {
           </div>
         </div>
       )}
+
+      {/* Loading Modal */}
+      <LoadingModal isOpen={isActionLoading} message={loadingMessage} />
+
+      {/* Script View Modal */}
+      <ScriptViewModal
+        isOpen={showScriptView}
+        onClose={() => setShowScriptView(false)}
+        filename={viewedScriptName}
+        content={scriptContent}
+        scriptId={viewedScriptId}
+        onDownload={handleDownloadScript}
+      />
     </div>
   )
 }
